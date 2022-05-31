@@ -142,32 +142,47 @@ int main(int argc, char* argv[])
    FD_SET(listen_fd, &master);
    FD_SET(meta_listen_fd, &master);
    FD_SET(pipe_fd[0], &master);
+           
+   // call the macro MAX3 to determine the largest file descriptor among the three 
+   // the value fdmax will be needed for the select call 
    int fdmax = MAX3(listen_fd, meta_listen_fd, pipe_fd[0]);
-
+   
+   // declare the count of means, sum of means and squared sum of means outside of the main server loop 
    int means_count = 0;
    double means_sum = 0.0;
    double means_sumsq = 0.0;
-
+   
+   // main server loop for processing 
    while(1)
    {
+        
+        // file descriptor set (contains the file descriptors we want to get info from) 
+        // the select call with parameters 
         fd_set reading_fds = master;
         select(fdmax+1, &reading_fds, NULL, NULL, NULL);
-
+        
+        // the main server listening file descriptor has input 
         if (FD_ISSET(listen_fd, &reading_fds)) {
+                   
             int comm_fd = accept(listen_fd, NULL, NULL);
             if (comm_fd == -1)
                 handle_error("server: accept error");
             
             char welcomemsg[] = "Stats server ready\n";
             write(comm_fd, welcomemsg, strlen(welcomemsg));
+                   
             fprintf(stderr, "Accepted new connection\n");
-
+            
+            // fork a child process to handle the new request 
             pid_t pid = fork();
-
+            
+            // the child process 
             if (pid == 0) {
-
+                
+                // close the listening file descriptor 
                 close(listen_fd);
-
+                
+                // our running variables for this given connection
                 int double_count = 0;
                 double running_sum = 0;
                 double sum_square = 0;
@@ -226,7 +241,8 @@ int main(int argc, char* argv[])
                     sprintf(exitbuffer, "EXIT STATS: count %d mean %.2lf stddev %.2lf", x, y, z);
                     write(comm_fd, exitbuffer, strlen(exitbuffer));
                     write(comm_fd, "\n", 1);
-
+                    
+                    // calculate and send the mean of this particular connection through the pipe when we close the connection with exit 
                     double mean = running_sum/double_count;
                     int rv = write(pipe_fd[1], &mean, sizeof(mean));
                     assert(rv == sizeof(mean));
@@ -234,7 +250,8 @@ int main(int argc, char* argv[])
                     break;
 
                     } else if (atof(strbuffer) != 0) {
-
+                    
+                    // if a number is entered rather than a command, we update the variables for this connection 
                     double current_num = atof(strbuffer);
                     double_count++;
                     running_sum += current_num;
@@ -248,18 +265,20 @@ int main(int argc, char* argv[])
                     }
 
                 }
-
+                
                 close(comm_fd);
                 exit(0);
             }
-
+                   
+            // the parent process 
             else {
 
                 close(comm_fd);
 
                 int status;
                 pid_t deadChild;
-
+                
+                // reaping child processes 
                 do {
                     deadChild = waitpid(-1, &status, WNOHANG);
                     if (deadChild == -1)
@@ -268,19 +287,22 @@ int main(int argc, char* argv[])
                 
             }
        }
-
+       
+       // the reading end of the pipe has input 
        if (FD_ISSET(pipe_fd[0], &reading_fds)) {
            
            double mean;
 
            int rv = read(pipe_fd[0], &mean, sizeof(mean));
            assert(rv == sizeof(mean));
-
+           
+           // update the global variables with what was sent through the pipe from the terminated connection 
            means_count++;
            means_sum += mean;
            means_sumsq += mean*mean;
        }
 
+       // the alternative connection file descriptor has input 
        if (FD_ISSET(meta_listen_fd, &reading_fds)) {
 
          int meta_comm_fd = accept(meta_listen_fd, NULL, NULL);
@@ -290,14 +312,18 @@ int main(int argc, char* argv[])
          fprintf(stderr, "Accepted new meta-stats server connection\n");
 
          // send connection count, mean of means, and stdandard deviation of means; no need to fork a child
+         // declare a char array of the maximum potential length 
          char reply[MAX_REPLY_LEN];
-
-         snprintf(reply, MAX_REPLY_LEN, "means_count %d mean_of_means %.2lf stddev_of_means %.2lf\n",
-                  means_count, means_sum/means_count,
-                  sqrt( (means_sumsq - means_sum*means_sum/means_count)/(means_count - 1) ) );
-
+         
+         // print our formatted output into the reply buffer array 
+         // value calculation is done within this function call (parameters being the buffer we write to, the maximum length, and the formatted output)
+         snprintf(reply, MAX_REPLY_LEN, "means_count %d mean_of_means %.2lf stddev_of_means %.2lf\n", means_count, means_sum/means_count, sqrt((means_sumsq - means_sum * means_sum / means_count) / (means_count - 1)));
+         
+         // send the contents of the buffer through the alternative connection 
          int rv = write(meta_comm_fd, reply, strlen(reply));
          assert(rv == strlen(reply));
+         
+         // close the connection at the end 
          close(meta_comm_fd);
        }
    }
