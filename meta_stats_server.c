@@ -311,7 +311,7 @@ int main(int argc, char* argv[])
 
          fprintf(stderr, "Accepted new meta-stats server connection\n");
 
-         // send connection count, mean of means, and stdandard deviation of means; no need to fork a child
+         // send the number of connections made, mean of means, and standard deviation of means; no need to fork a child
          // declare a char array of the maximum potential length 
          char reply[MAX_REPLY_LEN];
          
