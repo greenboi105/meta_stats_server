@@ -28,3 +28,4 @@ The three file descriptors of interest are the main socket, the secondary socket
 
 When a connection is accepted on the secondary port, the server sends information about past connections on the primary port. 
  
+Program makes use of standard UNIX system calls and the C programming language to accomplish the task.
